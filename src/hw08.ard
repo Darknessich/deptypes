@@ -1,24 +1,122 @@
 \import Data.Bool
 \import Data.List \hiding (headDef)
 \import hw07
-\import lect08
+\import lect08 \hiding (not-isInv)
 \import Order.LinearOrder
 \open LinearOrder
+
+\import Function.Meta ($)
+\import Meta \hiding (in)
+\import Paths
+\import Paths.Meta
+\import Arith.Nat
+\import Algebra.Meta
+\open Nat (*)
 
 -- 1. Реализуйте функцию filter и докажите ее корректность, то есть, что выполнены следующие условия:
 --    * filter p xs является подсписком xs
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\func filter {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | x :: xs => \case p x \with {
+    | true => x :: filter p xs
+    | false => filter p xs
+  }
+
+\func filter-sublist {A : \Type} (p : A -> Bool) (xs : List A) : Sublist (filter p xs) xs \elim xs
+  | nil => sub-nil
+  | x :: xs => cases (p x) \with {
+    | true => sub-keep idp (filter-sublist p xs)
+    | false => sub-skip (filter-sublist p xs)
+  }
+
+\func filter-all {A : \Type} (p : A -> Bool) (xs : List A) : \Pi (a : A) -> In a (filter p xs) -> p a = true \elim xs
+  | nil => \lam _ => \case __
+  | x :: xs => cases (p x arg addPath) \with {
+    | true, q => \lam a i => \case i \with {
+      | in h => rewrite (inv h) q
+      | next i => filter-all p xs a i
+    }
+    | false, q => filter-all p xs
+  }
+
+-- \Pi (ys : List A) -> \Sigma (Sublist ys xs) (\Pi (a : A) -> In a ys -> p a = true) -> Sublist ys (filter p xs)
+\func filter-max {A : \Type} (p : A -> Bool) {xs ys : List A}
+    (s : Sublist ys xs) (h : \Pi (a : A) -> In a ys -> p a = true)
+    : Sublist ys (filter p xs)
+  \elim xs, ys, s
+  | nil, nil, sub-nil => sub-nil
+  | nil, _ :: _, ()
+  | x :: xs, ys, sub-skip s => cases (p x) \with {
+    | true => sub-skip $ filter-max p s h
+    | false => filter-max p s h
+  }
+  | x :: xs, y :: ys, sub-keep q s => cases (p x arg addPath) \with {
+    | true, q' => sub-keep q $ filter-max p s \lam a i => h a (next i)
+    | false, q' => \case inv (h x (in q)) *> q' \with {}
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2
+
+\func perm<->sort {A : Dec} {xs ys : List A} : Perm xs ys <-> (Insertion.sort xs = Insertion.sort ys)
+  => (perm->sort, sort->perm)
+\where {
+
+  \func perm->sort {A : Dec} {xs ys : List A} (p : Perm xs ys) : Insertion.sort xs = Insertion.sort ys \elim xs, ys, p
+    | nil, nil, perm-nil
+      => idp
+    | x :: xs, y :: ys, perm-cons q p
+      => path \lam i => Insertion.sort.insert (q @ i) (perm->sort p @ i)
+    | x :: (x' :: xs), y :: (y' :: ys), perm-swap p q s
+      => rewrite (p, q, s) $ Insertion.sort.insert-comm y' y (Insertion.sort-sorted ys)
+    | xs, ys, perm-trans {zs} p q
+      => perm->sort p *> perm->sort q
+
+  \func sort->perm {A : Dec} {xs ys : List A} (p : Insertion.sort xs = Insertion.sort ys) : Perm xs ys
+    => perm-trans (Insertion.sort-perm xs) (rewrite p $ perm-sym $ Insertion.sort-perm ys)
+
+  \func perm-sym {A : \Type} {xs ys : List A} (p : Perm xs ys) : Perm ys xs \elim xs, ys, p
+    | nil, nil, perm-nil => perm-nil
+    | x :: xs, y :: ys, perm-cons q p => perm-cons (inv q) (perm-sym p)
+    | x :: (x' :: xs), y :: (y' :: ys), perm-swap p q s => perm-swap (inv q) (inv p) (inv s)
+    | xs, ys, perm-trans p q => perm-trans (perm-sym q) (perm-sym p)
+}
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort
 
 \func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l))
-  : sort l = Insertion.sort l => {?}
+    : sort l = Insertion.sort l
+  => inv $ perm<->sort.perm->sort p *> sorted-fix s
+\where {
+  \func sorted-fix {A : Dec} {xs : List A} (s : Sorted xs) : Insertion.sort xs = xs \elim xs, s
+    | nil, sorted-nil => idp
+    | x :: nil, sorted-cons p s => idp
+    | x :: x' :: xs, sorted-cons p s => rewrite (sorted-fix s, dec<=_reduce p) idp
+}
 
 -- 4. Определите факториал через хвостовую рекурсию
 --    Докажите, что он равен обычному определению факториала
+
+\func fac (n : Nat) : Nat \elim n
+  | 0 => 1
+  | suc n => suc n * fac n
+
+\func fac' (n : Nat) : Nat => aux 1 n
+\where {
+  \func aux (acc n : Nat) : Nat \elim n
+    | 0 => acc
+    | suc n => aux (suc n * acc) n
+
+  \func aux=fac (n acc : Nat) : aux acc n = fac n * acc \elim n
+    | 0 => equation
+    | suc n => aux=fac n (suc n * acc) *> equation
+}
+
+\func fac'=fac : fac' = fac
+  => path \lam i n => fac'.aux=fac n 1 @ i
+
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности
 --    Докажите ее корректность
@@ -26,7 +124,15 @@
 \data Paren | Left | Right
 
 \func isBalanced (xs : List Paren) : Bool
-  => {?}
+  => aux xs 0
+\where {
+  \func aux (xs : List Paren) (n : Nat) : Bool \elim xs, n
+    | nil, 0 => true
+    | nil, suc n => false
+    | Left :: xs, n => aux xs (suc n)
+    | Right :: xs, 0 => false
+    | Right :: xs, suc n => aux xs n
+}
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
@@ -34,4 +140,50 @@
   | xs => append-balanced {ys zs : List Paren} (Balanced ys) (Balanced zs) (xs = ys ++ zs)
 
 \func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs
-  => {?}
+  => (isBalanced->Balanced, Balanced->isBalanced)
+\where {
+  \func isBalanced->Balanced {xs : List Paren} (p : isBalanced xs = true) : Balanced xs
+    => split-balance xs 0 p
+
+  \func Split (n : Nat) (xs : List Paren) : \Set0 \elim n
+    | 0 => Balanced xs
+    | suc n => \Sigma (ys zs : List Paren) (Balanced ys) (Split n zs) (xs = ys ++ Right :: zs)
+
+  \func split-balance (xs : List Paren) (n : Nat) (p : isBalanced.aux xs n = true) : Split n xs \elim xs, n
+    | nil, 0 => nil-balanced
+    | Left :: xs, n => \let (ys, zs, b, s, h) => split-balance xs (suc n) p \in
+        split-prepend (cons-balanced b idp) s (pmap (Left ::) (h *> inv ++-assoc))
+    | Right :: xs, suc n => (nil, xs, nil-balanced, split-balance xs n p, idp)
+
+  \func split-prepend {n : Nat} {xs ys zs : List Paren} (b : Balanced ys) (s : Split n zs) (p : xs = ys ++ zs) : Split n xs
+    \elim n, s
+    | 0, s => append-balanced b s p
+    | suc n, (ws, rest, bw, s, q) => (ys ++ ws, rest, append-balanced b bw idp, s, p *> pmap (ys ++) q *> inv ++-assoc)
+
+  \func Balanced->isBalanced {xs : List Paren} (b : Balanced xs) : isBalanced xs = true
+    -- isBalanced xs          ==< inv ++_nil >==
+    -- isBalanced (xs ++ nil) ==< aux-balance b nil 0 >==
+    -- isBalanced.aux nil 0   ==< idp >==
+    -- true
+    => rewriteI ++_nil $ aux-balance b nil 0
+
+  \func aux-balance {xs : List Paren} (b : Balanced xs) (ys : List Paren) (n : Nat)
+    : isBalanced.aux (xs ++ ys) n = isBalanced.aux ys n
+  \elim xs, b
+    | nil, nil-balanced => idp
+    -- aux ((Left :: xs) ++ ys) (suc n)         ==< idp >==
+    -- aux (xs ++ ys) (suc n)                   ==< p >==
+    -- aux ((zs ++ Right :: nil) ++ ys) (suc n) ==< ++-assoc >==
+    -- aux (zs ++ (Right :: nil ++ ys)) (suc n) ==< aux-balance b (Right :: ys) (suc n) >==
+    -- aux (Right :: ys) (suc n)                ==< idp >==
+    -- aux ys n
+    | Left :: xs, cons-balanced {zs} b p
+      => rewrite (p, ++-assoc) $ aux-balance b (Right :: ys) (suc n)
+    -- aux (xs ++ ys) n         ==< p >==
+    -- aux ((zs ++ vs) ++ ys) n ==< ++-assoc >==
+    -- aux (zs ++ (vs ++ ys)) n ==< aux-balance bz (vs ++ ys) n >==
+    -- aux (vs ++ ys) n         ==< aux-balance bv ys n >==
+    -- aux ys n
+    | xs, append-balanced {zs} {vs} bz bv p
+      => rewrite (p, ++-assoc, aux-balance bz (vs ++ ys) n) $ aux-balance bv ys n
+}
